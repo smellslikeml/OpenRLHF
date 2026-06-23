@@ -490,6 +490,31 @@ if __name__ == "__main__":
         default=False,
         help="disable dividing by std for advantages while keeping mean normalization",
     )
+    # STARE surprisal-guided advantage reweighting (https://arxiv.org/abs/2606.19236)
+    parser.add_argument(
+        "--algo.advantage.surprisal_reweight",
+        action="store_true",
+        default=False,
+        help="enable STARE surprisal-guided reweighting of entropy-critical tokens' advantages",
+    )
+    parser.add_argument(
+        "--algo.advantage.surprisal_reweight_quantile",
+        type=float,
+        default=0.8,
+        help="batch-internal surprisal quantile above which tokens are treated as entropy-critical",
+    )
+    parser.add_argument(
+        "--algo.advantage.surprisal_reweight_factor",
+        type=float,
+        default=1.5,
+        help="multiplier applied to the advantages of entropy-critical (high-surprisal) tokens",
+    )
+    parser.add_argument(
+        "--algo.advantage.surprisal_reweight_sign_aware",
+        action="store_true",
+        default=True,
+        help="only amplify positive-advantage high-surprisal tokens (STARE four-quadrant view)",
+    )
     parser.add_argument(
         "--reward.overlong_buffer_len", type=float, default=None, help="reward with optional overlong penalty"
     )

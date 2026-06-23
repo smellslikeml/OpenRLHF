@@ -9,6 +9,7 @@ import torch
 from openrlhf.models.utils import compute_approx_kl, compute_reward, masked_mean
 from openrlhf.trainer.ppo_utils.experience import Experience
 from openrlhf.trainer.ppo_utils.length_penalty import apply_length_penalties
+from openrlhf.trainer.ppo_utils.surprisal_reweight import apply_surprisal_reweighting
 from openrlhf.trainer.ray.launcher import RayActorGroup
 from openrlhf.utils.logging_utils import init_logger
 from openrlhf.utils.seqlen_balancing import get_minimum_num_micro_batch_size, get_seqlen_balanced_partitions
@@ -326,6 +327,9 @@ class RemoteExperienceMaker:
 
             for exp in experiences:
                 exp.advantages = (exp.advantages - mean) * rstd
+
+        # ── STARE: surprisal-guided reweighting of entropy-critical tokens ──
+        apply_surprisal_reweighting(experiences, args)
 
         return experiences
 

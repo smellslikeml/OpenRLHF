@@ -268,6 +268,9 @@ OpenRLHF provides a complete RLHF pipeline with agent-based flexibility:
 - DAPO-style overlong penalty for length control (`--reward.overlong_buffer_len`, `--reward.overlong_penalty_factor`) — soft-penalize responses that exceed `max_new_tokens - overlong_buffer_len`
 - ProRL-style truncation penalty (`--reward.stop_properly_penalty_coef`) — for samples with `finish_reason='length'`: `coef ∈ [0, 1]` multiplicatively scales the reward; `coef < 0` sets the reward to that fixed value (e.g. `-0.5`)
 
+**Advantage Shaping**
+- STARE surprisal-guided advantage reweighting for GRPO-family entropy stability (`--algo.advantage.surprisal_reweight`, `--algo.advantage.surprisal_reweight_quantile`, `--algo.advantage.surprisal_reweight_factor`) — adapted from [STARE: Surprisal-Guided Token-Level Advantage Reweighting for Policy Entropy Stability](https://arxiv.org/abs/2606.19236). Flags entropy-critical (high-surprisal) tokens via batch-internal surprisal quantiles and amplifies their effective advantage to slow policy entropy collapse during long-horizon RLVR training
+
 **Production Features**
 - Wandb (`--logger.wandb.key`) and TensorBoard (`--logger.tensorboard_dir`) logging
 - Checkpoint recovery (`--ckpt.load_enable`, `--ckpt.save_steps`)
