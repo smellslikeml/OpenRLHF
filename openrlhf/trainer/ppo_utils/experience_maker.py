@@ -239,8 +239,8 @@ class RemoteExperienceMaker:
         """Compute shaped rewards, advantages, and returns for a batch of experiences."""
         args = self.strategy.args
 
-        # ── Length penalties (DAPO overlong / ProRL stop properly) ──
-        apply_length_penalties(experiences, args)
+        # ── Length penalties (DAPO overlong / ProRL stop properly / DRE overthinking) ──
+        apply_length_penalties(experiences, args, tokenizer=self.tokenizer)
 
         # ── Reward shaping (baseline subtraction) ──
         exp_len = [len(experience.index) for experience in experiences]

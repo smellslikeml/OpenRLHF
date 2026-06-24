@@ -267,6 +267,7 @@ OpenRLHF provides a complete RLHF pipeline with agent-based flexibility:
 **Reward Shaping**
 - DAPO-style overlong penalty for length control (`--reward.overlong_buffer_len`, `--reward.overlong_penalty_factor`) — soft-penalize responses that exceed `max_new_tokens - overlong_buffer_len`
 - ProRL-style truncation penalty (`--reward.stop_properly_penalty_coef`) — for samples with `finish_reason='length'`: `coef ∈ [0, 1]` multiplicatively scales the reward; `coef < 0` sets the reward to that fixed value (e.g. `-0.5`)
+- DRE-style overthinking penalty (`--reward.overthinking_penalty_factor`) — adapted from [Dynamic Rollout Editing for Reducing Overthinking in RL-Trained Reasoning Models](https://arxiv.org/abs/2606.17890); for *successful* trajectories only, soft-penalize unnecessary reasoning that trails the first answer emergence (e.g. text after `\boxed{...}` / `</think>`) in proportion to its length, leaving the verified prefix and unsuccessful trajectories untouched (`--reward.overthinking_answer_markers`, `--reward.overthinking_min_tail_tokens`)
 
 **Production Features**
 - Wandb (`--logger.wandb.key`) and TensorBoard (`--logger.tensorboard_dir`) logging
