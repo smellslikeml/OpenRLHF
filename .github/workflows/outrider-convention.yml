@@ -1,13 +1,9 @@
 name: Outrider Convention Pass
 
-# Phase B of the refinement chain — extracts contributor conventions from
-# the target repo's recent merged PRs, runs an agentic patch session
-# bounded to non-algorithmic changes, force-pushes with bot attribution,
-# and writes a `## Convention pass` section into the PR body.
-#
-# Triggered automatically when "Outrider Fidelity Audit" completes
-# successfully. The PR number is resolved from the parent workflow's
-# head_sha. workflow_dispatch is also supported for manual reruns.
+# Phase B — runs after the fidelity audit completes. Extracts contributor
+# conventions from the target repo's recent merged PRs, runs an agentic
+# patch session bounded to non-algorithmic changes, force-pushes with bot
+# attribution, and writes evidence to the action run-summary.
 
 on:
   workflow_run:
@@ -28,9 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       pr_number: ${{ steps.lookup.outputs.pr_number }}
-      pr_author: ${{ steps.lookup.outputs.pr_author }}
     steps:
-      - name: Resolve PR
+      - name: Resolve PR (by trigger label — robust across workflow_run hops)
         id: lookup
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,23 +33,22 @@ jobs:
           if [ -n "${{ inputs.pr_number }}" ]; then
             PR_NUMBER="${{ inputs.pr_number }}"
           else
-            PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
-              --jq '[.[] | select(.state == "open")] | .[0].number // ""')
+            PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" \
+              --label "outrider:fidelity-done" \
+              --state open \
+              --json number,author \
+              --jq '[.[] | select(.author.login == "app/remyx-ai")] | .[0].number // ""')
           fi
           if [ -z "$PR_NUMBER" ]; then
-            echo "No PR resolvable; skipping"
+            echo "No open remyx-ai[bot] PR carries outrider:fidelity-done; skipping"
             exit 0
           fi
-          AUTHOR=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq '.user.login')
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "pr_author=$AUTHOR" >> "$GITHUB_OUTPUT"
-          echo "Resolved PR #$PR_NUMBER (author=$AUTHOR)"
+          echo "Resolved PR #$PR_NUMBER (by label outrider:fidelity-done)"
 
   convention:
     needs: resolve-pr
-    if: |
-      needs.resolve-pr.outputs.pr_number != '' &&
-      needs.resolve-pr.outputs.pr_author == 'remyx-ai[bot]'
+    if: needs.resolve-pr.outputs.pr_number != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
