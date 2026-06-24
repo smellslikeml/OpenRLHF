@@ -1,0 +1,51 @@
+name: Outrider Fidelity Audit
+
+# REMYX-140 Phase A — triggered when a remyx-ai[bot] draft PR gets the
+# `outrider:draft` label. Diffs the PR against the paper's reference
+# implementation and appends a structured `## Coverage` matrix to the
+# PR body, transitioning the label to `outrider:fidelity-done` (or
+# `outrider:needs-judgment` if the audit flags a substantive deviation
+# for human review).
+#
+# The audit only mutates the PR body + labels. Code patching for
+# paper-faithful fixes is a Phase A v2 extension and intentionally
+# out of scope here.
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  fidelity:
+    # Only audit remyx-ai[bot] PRs that just got the outrider:draft
+    # label. Human-opened PRs with the same label (if any) are skipped.
+    if: |
+      github.event.label.name == 'outrider:draft' &&
+      github.event.pull_request.user.login == 'remyx-ai[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REMYX_API_KEY: ${{ secrets.REMYX_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Mint Remyx bot token
+        id: remyx-bot
+        shell: bash
+        run: |
+          token="$(curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.REMYX_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"repo\": \"${{ github.repository }}\"}" \
+            "https://engine.remyx.ai/api/v1.0/github/installation-token" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")" || token=""
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: remyxai/outrider@salma/remyx-140-refinement-pass-phase-a
+        with:
+          interest-id: e8a82d88-47e2-4cbb-99a6-bd7446cea409
+          mode: fidelity
+          pr-number: ${{ github.event.pull_request.number }}
+          github-token: ${{ steps.remyx-bot.outputs.token }}
