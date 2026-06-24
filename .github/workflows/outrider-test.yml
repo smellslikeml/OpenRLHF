@@ -1,0 +1,83 @@
+name: Outrider Test Gate
+
+# Phase C of the refinement chain — runs lint + targeted pytest on the
+# PR's added/modified files, writes a `## Refinement checks` section into
+# the PR body, transitions the label to outrider:ready-for-review (or
+# outrider:test-failed), and drops the PR's draft state on a passing run.
+#
+# Triggered automatically when "Outrider Convention Pass" completes
+# successfully. workflow_dispatch is also supported for manual reruns.
+
+on:
+  workflow_run:
+    workflows: ["Outrider Convention Pass"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to test'
+        required: true
+        type: number
+
+jobs:
+  resolve-pr:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.lookup.outputs.pr_number }}
+      pr_author: ${{ steps.lookup.outputs.pr_author }}
+    steps:
+      - name: Resolve PR
+        id: lookup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.pr_number }}" ]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+          else
+            PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
+              --jq '[.[] | select(.state == "open")] | .[0].number // ""')
+          fi
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR resolvable; skipping"
+            exit 0
+          fi
+          AUTHOR=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq '.user.login')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "pr_author=$AUTHOR" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #$PR_NUMBER (author=$AUTHOR)"
+
+  test:
+    needs: resolve-pr
+    if: |
+      needs.resolve-pr.outputs.pr_number != '' &&
+      needs.resolve-pr.outputs.pr_author == 'remyx-ai[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REMYX_API_KEY: ${{ secrets.REMYX_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Mint Remyx bot token
+        id: remyx-bot
+        shell: bash
+        run: |
+          token="$(curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.REMYX_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"repo\": \"${{ github.repository }}\"}" \
+            "https://engine.remyx.ai/api/v1.0/github/installation-token" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")" || token=""
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: remyxai/outrider@salma/remyx-140-refinement-pass-phase-a
+        with:
+          interest-id: e8a82d88-47e2-4cbb-99a6-bd7446cea409
+          mode: test
+          pr-number: ${{ needs.resolve-pr.outputs.pr_number }}
+          github-token: ${{ steps.remyx-bot.outputs.token }}
