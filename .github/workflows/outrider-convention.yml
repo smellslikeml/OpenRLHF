@@ -1,8 +1,18 @@
 name: Outrider Convention Pass
 
+# Phase B of the refinement chain — extracts contributor conventions from
+# the target repo's recent merged PRs, runs an agentic patch session
+# bounded to non-algorithmic changes, force-pushes with bot attribution,
+# and writes a `## Convention pass` section into the PR body.
+#
+# Triggered automatically when "Outrider Fidelity Audit" completes
+# successfully. The PR number is resolved from the parent workflow's
+# head_sha. workflow_dispatch is also supported for manual reruns.
+
 on:
-  pull_request:
-    types: [labeled]
+  workflow_run:
+    workflows: ["Outrider Fidelity Audit"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -11,11 +21,40 @@ on:
         type: number
 
 jobs:
-  convention:
+  resolve-pr:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event.label.name == 'outrider:fidelity-done' &&
-       github.event.pull_request.user.login == 'remyx-ai[bot]')
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.lookup.outputs.pr_number }}
+      pr_author: ${{ steps.lookup.outputs.pr_author }}
+    steps:
+      - name: Resolve PR
+        id: lookup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.pr_number }}" ]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+          else
+            PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
+              --jq '[.[] | select(.state == "open")] | .[0].number // ""')
+          fi
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR resolvable; skipping"
+            exit 0
+          fi
+          AUTHOR=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq '.user.login')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "pr_author=$AUTHOR" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #$PR_NUMBER (author=$AUTHOR)"
+
+  convention:
+    needs: resolve-pr
+    if: |
+      needs.resolve-pr.outputs.pr_number != '' &&
+      needs.resolve-pr.outputs.pr_author == 'remyx-ai[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -41,5 +80,5 @@ jobs:
         with:
           interest-id: e8a82d88-47e2-4cbb-99a6-bd7446cea409
           mode: convention
-          pr-number: ${{ github.event.pull_request.number || inputs.pr_number }}
+          pr-number: ${{ needs.resolve-pr.outputs.pr_number }}
           github-token: ${{ steps.remyx-bot.outputs.token }}
