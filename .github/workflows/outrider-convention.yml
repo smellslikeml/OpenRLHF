@@ -1,21 +1,21 @@
 name: Outrider Convention Pass
 
-# Phase B of the refinement chain — triggered when a remyx-ai[bot] draft
-# PR has just been audited for fidelity (label outrider:fidelity-done).
-# Extracts contributor conventions from the target repo's (or upstream's,
-# for forks) recent merged PRs, runs an agentic patch session bounded to
-# non-algorithmic changes, force-pushes with the bot's Verified attribution,
-# and posts an evidence comment listing the patterns it applied.
-
 on:
   pull_request:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to refine'
+        required: true
+        type: number
 
 jobs:
   convention:
     if: |
-      github.event.label.name == 'outrider:fidelity-done' &&
-      github.event.pull_request.user.login == 'remyx-ai[bot]'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'outrider:fidelity-done' &&
+       github.event.pull_request.user.login == 'remyx-ai[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -41,5 +41,5 @@ jobs:
         with:
           interest-id: e8a82d88-47e2-4cbb-99a6-bd7446cea409
           mode: convention
-          pr-number: ${{ github.event.pull_request.number }}
+          pr-number: ${{ github.event.pull_request.number || inputs.pr_number }}
           github-token: ${{ steps.remyx-bot.outputs.token }}
