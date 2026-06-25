@@ -12,7 +12,13 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from openrlhf.models import Actor, PolicyLoss, aggregate_loss
+from openrlhf.models import (
+    Actor,
+    PolicyLoss,
+    aggregate_loss,
+    counterfactual_grounding_loss,
+    suppress_visual_inputs,
+)
 from openrlhf.models.utils import compute_approx_kl, masked_mean
 from openrlhf.trainer.ppo_utils.experience import Experience
 from openrlhf.utils import get_tokenizer
@@ -350,6 +356,32 @@ class ActorPPOTrainer(ABC):
             )
             if self.args.actor.entropy_coef != 0:
                 loss -= entropy_loss * self.args.actor.entropy_coef
+
+        # CFPO cross-modal counterfactual grounding (arXiv:2606.23206): a second
+        # forward with visual cues suppressed; maximizing the factual/counterfactual
+        # discrepancy regularizes the policy toward grounding on visual evidence.
+        cfpo_coef = getattr(self.args.actor, "cfpo_coef", None)
+        if cfpo_coef is not None:
+            counterfactual_inputs = suppress_visual_inputs(mm_inputs)
+            if counterfactual_inputs:
+                cf_log_probs = self.actor(
+                    sequences,
+                    action_mask,
+                    attention_mask=attention_mask,
+                    ring_attn_group=self.strategy.ring_attn_group,
+                    packed_seq_lens=packed_seq_lens,
+                    **counterfactual_inputs,
+                )
+                cfpo_discrepancy = counterfactual_grounding_loss(
+                    action_log_probs,
+                    cf_log_probs,
+                    experience.action_mask,
+                    kl_estimator=self.args.algo.kl.estimator,
+                    **loss_batch_info,
+                )
+                experience.info["cfpo_grounding"] = cfpo_discrepancy.detach()
+                if cfpo_coef != 0:
+                    loss = loss - cfpo_coef * cfpo_discrepancy
 
         self.strategy.backward(loss, self.actor, self.actor_optim)
         if self.args.train.dynamic_batch_enable:

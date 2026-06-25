@@ -854,4 +854,20 @@ REINFORCE++-baseline
 
 ______________________________________________________________________
 
+## Cross-Modal Counterfactual Grounding (CFPO)
+
+*Adapted from [CounterFactual Policy Optimization (CFPO)](https://arxiv.org/abs/2606.23206).*
+
+For VLM RL training, CFPO adds a grounding regularizer on top of GRPO/DAPO. Each
+actor step runs a second forward with the visual cues suppressed (`pixel_values`
+zeroed) and **maximizes** the discrepancy between the factual and counterfactual
+action log-probs, discouraging the policy from ignoring visual evidence in favor
+of language priors. No reward model or extra supervision is required.
+
+- Enable: `--actor.cfpo_coef 0.05` (VLM runs only; `0` logs the `cfpo_grounding`
+  discrepancy without applying it to the loss)
+- The KL estimator follows `--algo.kl.estimator` (k3 by default, non-negative)
+
+______________________________________________________________________
+
 *OpenRLHF © 2026 OpenRLHF. All Rights Reserved.*
