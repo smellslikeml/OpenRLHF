@@ -434,6 +434,16 @@ if __name__ == "__main__":
         default=None,
         help="Entropy loss coef, set to 0 means only enable entropy logs",
     )
+    parser.add_argument(
+        "--actor.cfpo_coef",
+        type=float,
+        default=None,
+        help=(
+            "CFPO cross-modal counterfactual grounding coef (arXiv:2606.23206); VLM-only. "
+            "Runs a second forward with visual cues suppressed and maximizes the "
+            "factual/counterfactual discrepancy. Set to 0 to only log the discrepancy."
+        ),
+    )
     parser.add_argument("--reward.clip_range", type=float, nargs=2, default=(-10, 10), help="Reward clip range")
 
     # Optimizer + scheduler + grad clip, per entity (actor / critic).  Two sections:
