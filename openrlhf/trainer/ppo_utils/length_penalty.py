@@ -1,13 +1,15 @@
 """
 Length Penalty Module for RLHF Training
 
-Two types of length penalty are supported:
+Three types of length penalty are supported:
 1. DAPO Overlong Penalty: Penalizes based on response length exceeding a threshold
 2. ProRL Stop Properly Penalty: Penalizes truncated samples (finish_reason == "length")
+3. DRE Overthinking Penalty: Penalizes unnecessary reasoning after the answer emerges
 """
 
 from typing import List
 
+from openrlhf.trainer.ppo_utils.overthinking_penalty import apply_overthinking_penalty
 from openrlhf.utils.logging_utils import init_logger
 
 logger = init_logger(__name__)
@@ -106,19 +108,21 @@ def apply_stop_properly_penalty(
     return total_truncated
 
 
-def apply_length_penalties(experiences: List, args) -> None:
+def apply_length_penalties(experiences: List, args, tokenizer=None) -> None:
     """
     Apply length penalties to experiences based on configuration.
 
-    Supports two types of penalties:
+    Supports three types of penalties:
     1. DAPO Overlong Penalty (--overlong_buffer_len, --overlong_penalty_factor)
     2. ProRL Stop Properly Penalty (--stop_properly_penalty_coef)
+    3. DRE Overthinking Penalty (--overthinking_penalty_factor)
 
-    Both can be enabled simultaneously.
+    All can be enabled simultaneously.
 
     Args:
         experiences: List of Experience objects
         args: Training arguments containing penalty configuration
+        tokenizer: Tokenizer used by the overthinking penalty to decode responses
     """
     total_samples = sum(len(exp.rewards) for exp in experiences)
 
@@ -145,6 +149,21 @@ def apply_length_penalties(experiences: List, args) -> None:
         logger.info(
             f"[ProRL Stop Properly Penalty] {num_truncated}/{total_samples} samples truncated, "
             f"coef={args.reward.stop_properly_penalty_coef}"
+        )
+
+    # DRE-style overthinking penalty for successful trajectories that keep reasoning
+    # after the answer has emerged
+    if getattr(args.reward, "overthinking_penalty_factor", None) is not None:
+        num_overthinking = apply_overthinking_penalty(
+            experiences=experiences,
+            tokenizer=tokenizer,
+            penalty_factor=args.reward.overthinking_penalty_factor,
+            answer_markers=getattr(args.reward, "overthinking_answer_markers", None),
+            min_tail_tokens=getattr(args.reward, "overthinking_min_tail_tokens", 0),
+        )
+        logger.info(
+            f"[DRE Overthinking Penalty] {num_overthinking}/{total_samples} successful samples penalized, "
+            f"factor={args.reward.overthinking_penalty_factor}"
         )
 
     # Sync info["reward"] with the modified rewards so logged metrics reflect penalties

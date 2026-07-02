@@ -501,6 +501,26 @@ if __name__ == "__main__":
         help="Penalty for truncated samples (finish_reason='length'). "
         "If >= 0: multiplicative scaling [0,1]. If < 0: fixed reward override (e.g., -0.5).",
     )
+    parser.add_argument(
+        "--reward.overthinking_penalty_factor",
+        type=float,
+        default=None,
+        help="DRE overthinking penalty: max reward reduction for successful trajectories that keep "
+        "reasoning after the answer emerges. None disables the penalty.",
+    )
+    parser.add_argument(
+        "--reward.overthinking_answer_markers",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Substrings marking answer emergence for the overthinking penalty (default: '\\boxed{' and '</think>').",
+    )
+    parser.add_argument(
+        "--reward.overthinking_min_tail_tokens",
+        type=int,
+        default=0,
+        help="Minimum post-answer tail length (tokens) before the overthinking penalty applies.",
+    )
 
     # Context Parallel
     parser.add_argument("--ds.ring_attn_size", type=int, default=1, help="Ring attention group size")
