@@ -852,6 +852,10 @@ REINFORCE++-baseline
 }
 ```
 
+## Multi-Reward Advantage Estimator (GD²PO)
+
+For multi-reward RLHF (e.g., multi-turn agents or tasks with several competing objectives), set `--algo.advantage.estimator gd2po`. GD²PO performs GRPO-style group baseline subtraction **per reward dimension**, then applies **conflict-aware filtering** to mask rollouts whose per-dimension advantages disagree in sign (so opposing signals are not averaged into a near-zero advantage), and **query-level reweighting** to scale each prompt group by its reward consensus. Provide a reward function that returns a vector of per-dimension scores per rollout (exposed via `experience.info["score"]`); with a single reward dimension it reduces to the standard GRPO baseline.
+
 ______________________________________________________________________
 
 *OpenRLHF © 2026 OpenRLHF. All Rights Reserved.*
