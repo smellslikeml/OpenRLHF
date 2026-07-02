@@ -8,6 +8,7 @@ import torch
 
 from openrlhf.models.utils import compute_approx_kl, compute_reward, masked_mean
 from openrlhf.trainer.ppo_utils.experience import Experience
+from openrlhf.trainer.ppo_utils.gd2po import gather_reward_dims, group_dynamic_advantages
 from openrlhf.trainer.ppo_utils.length_penalty import apply_length_penalties
 from openrlhf.trainer.ray.launcher import RayActorGroup
 from openrlhf.utils.logging_utils import init_logger
@@ -268,6 +269,14 @@ class RemoteExperienceMaker:
             rewards = rewards - rewards.mean(-1, keepdim=True)
         elif args.algo.advantage.estimator == "group_norm":
             rewards = (rewards - rewards.mean(-1, keepdim=True)) / (rewards.std(-1, keepdim=True) + 1e-9)
+        elif args.algo.advantage.estimator == "gd2po":
+            # GD²PO: conflict-aware filtering + query-level reweighting over the
+            # per-dimension reward scores carried in experience.info (see ppo_utils.gd2po).
+            reward_dims = gather_reward_dims(experiences, indices, args.rollout.n_samples_per_prompt)
+            rewards, gd2po_info = group_dynamic_advantages(reward_dims)
+            conflict_per_exp = gd2po_info["conflict_mask"].reshape(-1)[indices].split(exp_len)
+            for experience, conflict in zip(experiences, conflict_per_exp):
+                experience.info["gd2po_conflict"] = conflict
 
         rewards = rewards.reshape(-1)[indices].split(exp_len)
 
@@ -289,12 +298,20 @@ class RemoteExperienceMaker:
                     args.algo.advantage.gamma,
                     args.algo.advantage.lambd,
                 )
-            elif self.advantage_estimator in ["reinforce", "rloo", "reinforce_baseline", "group_norm", "dr_grpo"]:
+            elif self.advantage_estimator in [
+                "reinforce",
+                "rloo",
+                "reinforce_baseline",
+                "group_norm",
+                "dr_grpo",
+                "gd2po",
+            ]:
                 if args.algo.advantage.gamma != 1.0 and self.advantage_estimator in [
                     "rloo",
                     "reinforce_baseline",
                     "group_norm",
                     "dr_grpo",
+                    "gd2po",
                 ]:
                     logger.warning("gamma is set to 1.0 for rloo, reinforce_baseline, and group_norm")
                     args.algo.advantage.gamma = 1.0
