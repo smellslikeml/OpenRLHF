@@ -501,6 +501,15 @@ if __name__ == "__main__":
         help="Penalty for truncated samples (finish_reason='length'). "
         "If >= 0: multiplicative scaling [0,1]. If < 0: fixed reward override (e.g., -0.5).",
     )
+    parser.add_argument(
+        "--reward.mrpo_step_decay",
+        type=float,
+        default=None,
+        help="MRPO step-level penalty (arxiv:2606.31825): for negative-outcome rollouts, "
+        "attenuate per-token rewards across reasoning steps by an exponentially decaying "
+        "factor (earliest step damped the most). Typical range 0.5-0.9; the paper reports "
+        "gains at ~0.7. No-op for successful rollouts and when unset.",
+    )
 
     # Context Parallel
     parser.add_argument("--ds.ring_attn_size", type=int, default=1, help="Ring attention group size")
@@ -610,9 +619,9 @@ if __name__ == "__main__":
     # silent no-op. dr_grpo subtracts the group mean too (see experience_maker), so it
     # belongs here as well.
     if args.algo.advantage.estimator in ["rloo", "reinforce_baseline", "group_norm", "dr_grpo"]:
-        assert (
-            args.rollout.n_samples_per_prompt > 1
-        ), f"{args.algo.advantage.estimator} requires n_samples_per_prompt > 1"
+        assert args.rollout.n_samples_per_prompt > 1, (
+            f"{args.algo.advantage.estimator} requires n_samples_per_prompt > 1"
+        )
 
     # VLM constraints: critic and packing_samples are not supported
     if args.data.max_images_per_prompt > 0:
@@ -674,9 +683,9 @@ if __name__ == "__main__":
         assert args.train.async_enable, "--train.partial_rollout_enable requires --train.async_enable."
 
     if args.eval.dataset:
-        assert (
-            args.reward.remote_url or args.train.agent_func_path
-        ), "`--eval.dataset` requires `--reward.remote_url` or `--train.agent_func_path` (#1242)."
+        assert args.reward.remote_url or args.train.agent_func_path, (
+            "`--eval.dataset` requires `--reward.remote_url` or `--train.agent_func_path` (#1242)."
+        )
 
     if args.algo.kl.use_loss:
         if args.algo.kl.estimator not in ["k2", "k3"]:
@@ -696,15 +705,15 @@ if __name__ == "__main__":
         )
 
     if args.algo.dynamic_filtering_enable:
-        assert (
-            args.algo.dynamic_filtering_range[0] < args.algo.dynamic_filtering_range[1]
-        ), "reward_clip_range[0] must be less than reward_clip_range[1]"
-        assert (
-            args.reward.remote_url or args.train.agent_func_path
-        ), "remote_rm_url or agent_func_path must be specified when using dynamic filtering"
-        assert (
-            args.rollout.n_samples_per_prompt > 1
-        ), "n_samples_per_prompt must be greater than 1 when using dynamic filtering"
+        assert args.algo.dynamic_filtering_range[0] < args.algo.dynamic_filtering_range[1], (
+            "reward_clip_range[0] must be less than reward_clip_range[1]"
+        )
+        assert args.reward.remote_url or args.train.agent_func_path, (
+            "remote_rm_url or agent_func_path must be specified when using dynamic filtering"
+        )
+        assert args.rollout.n_samples_per_prompt > 1, (
+            "n_samples_per_prompt must be greater than 1 when using dynamic filtering"
+        )
 
     assert (
         args.rollout.n_samples_per_prompt * args.rollout.batch_size // args.rollout.micro_batch_size

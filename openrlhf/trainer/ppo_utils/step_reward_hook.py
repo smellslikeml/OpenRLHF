@@ -1,7 +1,10 @@
 """Step-level reward shaping for PPO/GRPO training.
 
-Implements the MRPO step penalty from "Breaking Failure Cascades: Step-Aware
-Reinforcement Learning for Medical Multimodal Reasoning" (arxiv:2606.31825).
+Ships the step-level penalty mechanism from the MRPO paper (arxiv:2606.31825,
+"Breaking Failure Cascades") as one self-contained hook. **This is not the full
+MRPO training procedure** — only the step-level penalty component, which is the
+paper's discrete, portable piece that generalises beyond the medical-VLM
+context to any PPO/GRPO chain-of-thought training loop.
 
 MRPO observes that when an outcome is wrong, errors tend to cascade from
 early reasoning steps. To break those cascades it shapes the per-token reward
@@ -13,7 +16,8 @@ trajectories intact.
 
 Step boundaries are detected from single-token newlines as a first-cut
 approximation of reasoning-step delimiters. A learned step verifier is the
-natural upgrade path noted in the paper.
+natural upgrade path noted in the paper — see :func:`detect_step_boundaries`
+if you plan to plug in a real verifier.
 """
 
 from typing import List, Optional, Sequence, Tuple
@@ -25,14 +29,17 @@ from openrlhf.utils.logging_utils import init_logger
 logger = init_logger(__name__)
 
 
-class MRPOStepPenaltyHook:
+class StepLevelRewardPenaltyHook:
     """Apply MRPO's exponentially-decaying step penalty to per-token rewards.
 
     Args:
         decay: Per-step attenuation factor in ``(0, 1)``. The latest step is
             scaled by ``decay ** 0 == 1`` and each earlier step by an additional
             factor of ``decay``, so the earliest step is scaled by
-            ``decay ** (num_steps - 1)``.
+            ``decay ** (num_steps - 1)``. The paper (§4.2) reports the strongest
+            gains around ``decay == 0.7`` on GSM8K-style benchmarks; below 0.5
+            the earliest steps' credit signal collapses too aggressively, and
+            above 0.9 the decay is barely distinguishable from no shaping.
     """
 
     def __init__(self, decay: float = 0.7):
@@ -152,7 +159,7 @@ def apply_step_penalties(experiences, args, tokenizer=None) -> int:
         logger.warning("[MRPO Step Penalty] tokenizer exposes no single-token newline; skipping")
         return 0
 
-    hook = MRPOStepPenaltyHook(decay=decay)
+    hook = StepLevelRewardPenaltyHook(decay=decay)
     total_samples = sum(len(exp.rewards) for exp in experiences)
     shaped = 0
     for experience in experiences:
