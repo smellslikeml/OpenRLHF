@@ -26,6 +26,7 @@ class RemoteExperienceMaker:
         kl_controller,
         strategy,
         tokenizer,
+        pbrs_labeler=None,
         **kwargs,
     ):
         super().__init__()
@@ -40,6 +41,22 @@ class RemoteExperienceMaker:
         self.initial_model_group = initial_model_group
         self.tokenizer = tokenizer
         self.kl_ctl = kl_controller
+        # Optional PBRS reward-labeler hook (arxiv:2606.27180). ``None`` (default)
+        # leaves the reward-model path untouched; see ``_apply_pbrs_labeler``.
+        self.pbrs_labeler = pbrs_labeler
+
+    def _apply_pbrs_labeler(self, rewards_list, sequences_list):
+        """Blend the optional PBRS reward-labeler signal into ``rewards_list``.
+
+        Adapted from arxiv:2606.27180. When a labeler is configured, the
+        reward-model rewards are blended with the labeler's signal before being
+        attached to the samples; when ``self.pbrs_labeler`` is ``None`` (the
+        default) rewards pass through unchanged, so the reward-model path is
+        byte-for-byte identical to the unhooked behavior.
+        """
+        if self.pbrs_labeler is None:
+            return rewards_list
+        return self.pbrs_labeler.apply(rewards_list, sequences_list)
 
     def split_rollout_samples(self, rollout_samples):
         for i, sample in enumerate(rollout_samples):
@@ -189,6 +206,7 @@ class RemoteExperienceMaker:
 
         if use_reward_model:
             rewards_list = self._flatten_results(r_refs, duplicate_factor)
+            rewards_list = self._apply_pbrs_labeler(rewards_list, sequences_list)
             for i, samples in enumerate(samples_list):
                 samples.rewards = rewards_list[i]
                 samples.info["reward"] = rewards_list[i]

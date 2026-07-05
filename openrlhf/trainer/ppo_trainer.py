@@ -157,6 +157,7 @@ class BasePPOTrainer(ABC):
         reference_model_group: RayActorGroup,
         vllm_engines,
         tokenizer,
+        pbrs_labeler=None,
     ) -> None:
         self.strategy = strategy
         self.args = strategy.args
@@ -183,6 +184,7 @@ class BasePPOTrainer(ABC):
             self.kl_ctl,
             self.strategy,
             tokenizer,
+            pbrs_labeler=pbrs_labeler,
         )
 
         # Tracking backends
