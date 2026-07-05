@@ -477,9 +477,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--algo.advantage.estimator",
         type=str,
-        choices=["gae", "reinforce", "rloo", "reinforce_baseline", "group_norm", "dr_grpo"],
+        choices=["gae", "reinforce", "rloo", "reinforce_baseline", "group_norm", "dr_grpo", "gd2po"],
         default="gae",
-        help="Choose advantage estimation method: gae, reinforce, rloo, reinforce_baseline, group_norm, dr_grpo",
+        help="Choose advantage estimation method: gae, reinforce, rloo, reinforce_baseline, group_norm, dr_grpo, gd2po",
     )
     parser.add_argument(
         "--algo.kl.use_loss", action="store_true", default=False, help="whether to use KL loss from GRPO"
@@ -608,8 +608,8 @@ if __name__ == "__main__":
     # These estimators compute a per-prompt-group baseline (mean / std / leave-one-out),
     # so with n_samples_per_prompt == 1 every advantage collapses to 0 and training is a
     # silent no-op. dr_grpo subtracts the group mean too (see experience_maker), so it
-    # belongs here as well.
-    if args.algo.advantage.estimator in ["rloo", "reinforce_baseline", "group_norm", "dr_grpo"]:
+    # belongs here as well. gd2po applies the same per-dimension group baseline.
+    if args.algo.advantage.estimator in ["rloo", "reinforce_baseline", "group_norm", "dr_grpo", "gd2po"]:
         assert (
             args.rollout.n_samples_per_prompt > 1
         ), f"{args.algo.advantage.estimator} requires n_samples_per_prompt > 1"
