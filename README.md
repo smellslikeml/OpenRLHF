@@ -584,6 +584,22 @@ ray job submit --address="http://127.0.0.1:8265" \
 
 📖 **Full Example**: [examples/scripts/train_ppo_with_reward_fn.sh](./examples/scripts/train_ppo_with_reward_fn.sh)
 
+### Reward Shaping via the PBRS Labeler Hook (Internal Extension Point)
+
+For reward **shaping** (rather than full reward replacement), OpenRLHF exposes an optional PBRS (Potential-Based Reward Shaping) labeler hook at the reward-collection call site. A `PBRSLabeler` subclass blends an external per-sequence signal into the reward-model reward; `blend` in `[0.0, 1.0]` controls how much of the reward is replaced (`0.0` is an exact no-op, preserving the optimal policy as the PBRS guarantee requires). This is a default-off, Python-injected extension point (no CLI flag): it is wired in via `PPOTrainer(..., pbrs_labeler=<labeler>)` and the launcher.
+
+```python
+from openrlhf.utils.pbrs_utils import PBRSLabeler
+
+class MyLabeler(PBRSLabeler):
+    def score(self, rewards_list, sequences_list):
+        ...  # return one signal per sequence, matching reward shape
+```
+
+The shipped `IdentityLabeler` is a reference no-op whose signal equals the reward-model reward, so the protocol can be exercised end-to-end without an external checkpoint. A concrete VLM-backed labeler (loading a small VLM and fitting a potential model) is left to downstream work; see `openrlhf/utils/pbrs_utils.py`.
+
+📖 **Starting Point**: [examples/scripts/train_pbrs_reward_shaping.sh](./examples/scripts/train_pbrs_reward_shaping.sh)
+
 ---
 
 <a id="multi-turn-agent-complex-environment-interactions"></a>
