@@ -9,6 +9,7 @@ import torch
 from openrlhf.models.utils import compute_approx_kl, compute_reward, masked_mean
 from openrlhf.trainer.ppo_utils.experience import Experience
 from openrlhf.trainer.ppo_utils.length_penalty import apply_length_penalties
+from openrlhf.trainer.ppo_utils.step_reward_hook import apply_step_penalties
 from openrlhf.trainer.ray.launcher import RayActorGroup
 from openrlhf.utils.logging_utils import init_logger
 from openrlhf.utils.seqlen_balancing import get_minimum_num_micro_batch_size, get_seqlen_balanced_partitions
@@ -238,6 +239,9 @@ class RemoteExperienceMaker:
     def compute_advantages_and_returns(self, experiences: List[Experience]) -> List[Experience]:
         """Compute shaped rewards, advantages, and returns for a batch of experiences."""
         args = self.strategy.args
+
+        # ── MRPO step-level penalty (arxiv:2606.31825); opt-in, no-op by default ──
+        apply_step_penalties(experiences, args, self.tokenizer)
 
         # ── Length penalties (DAPO overlong / ProRL stop properly) ──
         apply_length_penalties(experiences, args)

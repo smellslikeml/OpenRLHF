@@ -267,6 +267,7 @@ OpenRLHF provides a complete RLHF pipeline with agent-based flexibility:
 **Reward Shaping**
 - DAPO-style overlong penalty for length control (`--reward.overlong_buffer_len`, `--reward.overlong_penalty_factor`) — soft-penalize responses that exceed `max_new_tokens - overlong_buffer_len`
 - ProRL-style truncation penalty (`--reward.stop_properly_penalty_coef`) — for samples with `finish_reason='length'`: `coef ∈ [0, 1]` multiplicatively scales the reward; `coef < 0` sets the reward to that fixed value (e.g. `-0.5`)
+- MRPO step-level penalty (`--reward.mrpo_step_decay`) — adapted from "Breaking Failure Cascades: Step-Aware Reinforcement Learning for Medical Multimodal Reasoning": for negative-outcome rollouts, attenuate per-token rewards across reasoning steps with an exponentially decaying factor (strongest attenuation on the earliest step); no-op for successful rollouts and when the flag is unset
 
 **Production Features**
 - Wandb (`--logger.wandb.key`) and TensorBoard (`--logger.tensorboard_dir`) logging
