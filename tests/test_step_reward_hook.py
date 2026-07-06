@@ -98,6 +98,23 @@ class TestStepLevelRewardPenaltyHook:
     def test_detect_step_boundaries_returns_none_without_newlines(self):
         assert detect_step_boundaries(torch.tensor([1, 2, 3, 4]), {NL}) is None
 
+    def test_hook_uses_configured_success_threshold(self):
+        # With a threshold of 1.0, a positive-but-below-threshold outcome (0.5)
+        # is still treated as a failure and gets penalized.
+        hook = StepLevelRewardPenaltyHook(decay=0.7, success_threshold=1.0)
+        rewards = torch.full((6,), -1.0)
+        out = hook.apply(rewards, outcome_reward=0.5, step_boundaries=[(0, 2), (2, 4), (4, 6)])
+        assert torch.allclose(out[0:2], torch.full((2,), -0.49))  # decay ** 2
+        assert torch.allclose(out[2:4], torch.full((2,), -0.70))  # decay ** 1
+        assert torch.allclose(out[4:6], torch.full((2,), -1.00))  # decay ** 0
+
+    def test_hook_leaves_at_threshold_outcome_unchanged(self):
+        # outcome == threshold is treated as success (>= is inclusive).
+        hook = StepLevelRewardPenaltyHook(decay=0.7, success_threshold=1.0)
+        rewards = torch.full((6,), -1.0)
+        out = hook.apply(rewards, outcome_reward=1.0, step_boundaries=[(0, 2), (2, 4), (4, 6)])
+        assert torch.equal(out, rewards)
+
 
 class TestApplyStepPenalties:
     """Integration: drives apply_step_penalties on a real Experience batch."""
@@ -145,6 +162,25 @@ class TestApplyStepPenalties:
 
         assert apply_step_penalties([exp], _DisabledArgs(), tokenizer=_FakeTokenizer()) == 0
         assert torch.equal(exp.rewards, before)
+
+    def test_apply_step_penalties_honors_custom_success_threshold(self):
+        # A positive-but-below-threshold outcome should still be penalized.
+        exp = self._make_experience(torch.tensor([[0.0625] * 8]))  # sum = 0.5
+
+        class _ThresholdArgs:
+            class reward:
+                mrpo_step_decay = 0.7
+                mrpo_success_threshold = 1.0
+
+        shaped = apply_step_penalties([exp], _ThresholdArgs(), tokenizer=_FakeTokenizer())
+
+        assert shaped == 1
+        # Each token starts at 0.0625; the three reasoning steps get decay ** 2,
+        # decay ** 1, decay ** 0 respectively.
+        rewards = exp.rewards[0]
+        assert torch.allclose(rewards[0:3], torch.full((3,), 0.0625 * 0.49))
+        assert torch.allclose(rewards[3:6], torch.full((3,), 0.0625 * 0.70))
+        assert torch.allclose(rewards[6:8], torch.full((2,), 0.0625 * 1.00))
 
     def test_apply_step_penalties_skips_response_without_newlines(self):
         # Single-step response (no newline) cannot be decayed across steps.

@@ -505,10 +505,19 @@ if __name__ == "__main__":
         "--reward.mrpo_step_decay",
         type=float,
         default=None,
-        help="MRPO step-level penalty (arxiv:2606.31825): for negative-outcome rollouts, "
+        help="MRPO step-level penalty (arxiv:2606.31825): for failed rollouts, "
         "attenuate per-token rewards across reasoning steps by an exponentially decaying "
         "factor (earliest step damped the most). Typical range 0.5-0.9; the paper reports "
         "gains at ~0.7. No-op for successful rollouts and when unset.",
+    )
+    parser.add_argument(
+        "--reward.mrpo_success_threshold",
+        type=float,
+        default=0.0,
+        help="Outcome cutoff separating successful from failed rollouts for MRPO "
+        "(``outcome >= threshold`` -> unchanged, ``<`` -> penalized). Default 0.0 "
+        "matches the paper's binary-outcome framing; raise for continuous reward "
+        "models whose 'correct' outputs are not zero-centered.",
     )
 
     # Context Parallel

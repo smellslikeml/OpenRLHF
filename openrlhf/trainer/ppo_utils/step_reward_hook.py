@@ -10,9 +10,11 @@ MRPO observes that when an outcome is wrong, errors tend to cascade from
 early reasoning steps. To break those cascades it shapes the per-token reward
 with an exponentially decaying factor across reasoning steps: the latest step
 keeps its full weight and each earlier step is attenuated by another factor of
-``decay``, so the earliest step is damped the most. Successful (non-negative
-outcome) rollouts are returned unchanged, leaving the credit signal on correct
-trajectories intact.
+``decay``, so the earliest step is damped the most. Successful rollouts
+(``outcome_reward >= success_threshold``, default threshold ``0.0`` to match
+the paper's binary-outcome framing) are returned unchanged, leaving the credit
+signal on correct trajectories intact. The threshold is opt-in for use with
+continuous reward models that are not zero-centered.
 
 Step boundaries are detected from single-token newlines as a first-cut
 approximation of reasoning-step delimiters. A learned step verifier is the
@@ -40,12 +42,19 @@ class StepLevelRewardPenaltyHook:
             gains around ``decay == 0.7`` on GSM8K-style benchmarks; below 0.5
             the earliest steps' credit signal collapses too aggressively, and
             above 0.9 the decay is barely distinguishable from no shaping.
+        success_threshold: Outcome cutoff for treating a rollout as successful.
+            The paper uses binary correctness with ``0`` as the natural cutoff;
+            continuous reward models emitting logits that are not zero-centered
+            (e.g., a preference RM whose "correct" outputs cluster around 0.4)
+            need a matching threshold. A rollout is left unchanged iff
+            ``outcome_reward >= success_threshold``.
     """
 
-    def __init__(self, decay: float = 0.7):
+    def __init__(self, decay: float = 0.7, success_threshold: float = 0.0):
         if not 0.0 < decay < 1.0:
             raise ValueError(f"decay must be in (0, 1), got {decay}")
         self.decay = decay
+        self.success_threshold = success_threshold
 
     def apply(
         self,
@@ -55,10 +64,11 @@ class StepLevelRewardPenaltyHook:
     ) -> torch.Tensor:
         """Return a (possibly) shaped copy of ``per_token_reward``.
 
-        No-op when the outcome is non-negative (successful rollout) or when no
-        step boundaries are available.
+        No-op when the rollout is successful
+        (``outcome_reward >= self.success_threshold``) or when no step
+        boundaries are available.
         """
-        if step_boundaries is None or outcome_reward >= 0:
+        if step_boundaries is None or outcome_reward >= self.success_threshold:
             return per_token_reward
 
         modified = per_token_reward.clone()
@@ -84,8 +94,13 @@ def detect_step_boundaries(
 
     boundaries: List[Tuple[int, int]] = []
     start = 0
-    for idx in range(total):
-        if int(response_token_ids[idx].item()) in newline_token_ids:
+    # Materialize once as a Python list: per-token ``.item()`` calls trigger a
+    # device-to-host sync on GPU tensors, and even on CPU tensors are much
+    # slower than iterating a native list. Set lookup keeps membership O(1).
+    token_ids = response_token_ids.tolist()
+    newline_set = set(newline_token_ids)
+    for idx, token_id in enumerate(token_ids):
+        if token_id in newline_set:
             boundaries.append((start, idx + 1))
             start = idx + 1
     if start < total:
@@ -129,15 +144,18 @@ def apply_step_penalties(experiences, args, tokenizer=None) -> int:
     """Shape per-token rewards with MRPO step penalties (mutates in place).
 
     Opt-in: active only when ``args.reward.mrpo_step_decay`` is set to a value
-    in ``(0, 1)``. Reads nothing else from ``args`` and is a no-op (returning
-    ``0``) otherwise, so callers that do not enable it see no behavior change.
+    in ``(0, 1)``. Also reads ``args.reward.mrpo_success_threshold`` (default
+    ``0.0``) to define the outcome cutoff that separates successful rollouts
+    (left unchanged) from failed ones (penalized). Otherwise a no-op
+    (returning ``0``), so callers that do not enable it see no behavior change.
 
     Should run before :func:`apply_length_penalties`, whose own ``info["reward"]``
     sync then captures the shaped rewards for logging.
 
     Args:
         experiences: List of batched ``Experience`` objects (mutated in place).
-        args: Training args; only ``args.reward.mrpo_step_decay`` is read.
+        args: Training args; ``args.reward.mrpo_step_decay`` and
+            ``args.reward.mrpo_success_threshold`` are read.
         tokenizer: Tokenizer used to locate newline step delimiters.
 
     Returns:
@@ -159,7 +177,8 @@ def apply_step_penalties(experiences, args, tokenizer=None) -> int:
         logger.warning("[MRPO Step Penalty] tokenizer exposes no single-token newline; skipping")
         return 0
 
-    hook = StepLevelRewardPenaltyHook(decay=decay)
+    success_threshold = float(getattr(args.reward, "mrpo_success_threshold", 0.0))
+    hook = StepLevelRewardPenaltyHook(decay=decay, success_threshold=success_threshold)
     total_samples = sum(len(exp.rewards) for exp in experiences)
     shaped = 0
     for experience in experiences:
@@ -169,7 +188,7 @@ def apply_step_penalties(experiences, args, tokenizer=None) -> int:
             if per_token.dim() == 0:
                 continue  # per-episode scalar reward: nothing to shape per-token
             outcome = float(per_token.sum().item())
-            if outcome >= 0:
+            if outcome >= success_threshold:
                 continue  # successful rollout: leave the credit signal intact
             response_ids = _response_token_ids(experience, j)
             if len(response_ids) != len(per_token):
