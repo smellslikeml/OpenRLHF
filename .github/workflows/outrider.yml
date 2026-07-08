@@ -30,6 +30,10 @@ on:
         description: 'Optional arxiv_id from this repo''s candidate pool to implement directly.'
         required: false
         default: ''
+      publish:
+        description: 'pr (default) or branch — under branch mode, produces a fork branch without opening PR/Issue (v1.7.11+).'
+        required: false
+        default: 'pr'
       claude-timeout:
         description: 'Wall-clock seconds for the Claude Code agent calls (preflight + implementation). Raise for very large monorepos; lower to cap cost.'
         required: false
@@ -110,7 +114,7 @@ jobs:
           - For files > 500 LOC where you only need one function, prefer AST search
             + targeted Read over reading the whole file.
           EOF
-      - uses: remyxai/outrider@feat/lead-implementation-spec
+      - uses: remyxai/outrider@v1
         with:
           interest-id: e8a82d88-47e2-4cbb-99a6-bd7446cea409
           # Minimum days between recommendation PRs on this repo. '0' lets
@@ -124,6 +128,7 @@ jobs:
           # scheduled runs — the action uses its own defaults.
           search-method: ${{ inputs.search-method }}
           pin-arxiv: ${{ inputs.pin-arxiv }}
+          publish: ${{ inputs.publish }}
           claude-timeout: ${{ inputs.claude-timeout }}
           lead-content: ${{ inputs.lead-content }}
           # Maps provider name → base URL. Adding more providers here
