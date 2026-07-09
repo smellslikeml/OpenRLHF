@@ -128,6 +128,9 @@ class PolicyLoss(nn.Module):
         enable_vllm_is_correction: bool = False,
         vllm_is_truncated_threshold: list = None,
         vllm_is_correction_type: str = "tis",
+        enable_role_aware_weighting: bool = False,
+        role_amplify: float = 1.0,
+        role_attenuate: float = 1.0,
     ) -> None:
         super().__init__()
         self.clip_eps_low = clip_eps_low
@@ -138,6 +141,9 @@ class PolicyLoss(nn.Module):
         self.enable_vllm_is_correction = enable_vllm_is_correction
         self.vllm_is_truncated_threshold = vllm_is_truncated_threshold
         self.vllm_is_correction_type = vllm_is_correction_type
+        self.enable_role_aware_weighting = enable_role_aware_weighting
+        self.role_amplify = role_amplify
+        self.role_attenuate = role_attenuate
 
         # GSPO requires sequence-level loss (per-sample mean)
         if policy_loss_type == "gspo":
@@ -162,6 +168,7 @@ class PolicyLoss(nn.Module):
         dp_size: int = 1,
         batch_num_tokens: Optional[float] = None,
         global_batch_size: Optional[float] = None,
+        sequences: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raw_policy_log_ratio = log_probs - old_log_probs
         if self.policy_loss_type == "ppo":
@@ -217,6 +224,26 @@ class PolicyLoss(nn.Module):
                 vllm_is = torch.exp(rollout_log_ratio).clamp(min=low_threshold, max=high_threshold).detach()
                 loss = vllm_is * loss
             vllm_kl = masked_mean(rollout_log_probs - old_log_probs, action_mask, dim=None)
+
+        # Role-Aware Policy Optimization (RAPO): reweight the per-token policy loss
+        # by role-specificity, asymmetric in the advantage sign -- amplify role-specific
+        # tokens under a positive advantage and attenuate them under a negative one, so
+        # generic reward-hacking phrases no longer share identical gradients with genuine
+        # role-specific phrases. https://arxiv.org/abs/2606.27025
+        if self.enable_role_aware_weighting and action_mask is not None:
+            # Imported lazily so ``loss.py`` stays loadable on its own (e.g. the standalone
+            # test harness that only loads ``utils`` + ``loss``). Resolves to this package's
+            # sibling ``role_aware_weighting`` in production and under the test fake package.
+            from .role_aware_weighting import compute_role_aware_weight
+
+            role_weight = compute_role_aware_weight(
+                sequences,
+                action_mask,
+                advantages,
+                amplify=self.role_amplify,
+                attenuate=self.role_attenuate,
+            )
+            loss = loss * role_weight
 
         loss = aggregate_loss(
             loss,

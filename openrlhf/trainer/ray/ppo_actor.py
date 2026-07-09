@@ -85,6 +85,12 @@ class ActorPPOTrainer(ABC):
                 else None
             ),
             vllm_is_correction_type=self.args.algo.advantage.is_correction_type,
+            # Role-Aware Policy Optimization (RAPO): opt-in asymmetric gradient weighting by
+            # role-specificity. Defaults off; read via getattr so this is a no-op until the
+            # config schema exposes actor.enable_role_aware_weighting. arXiv:2606.27025
+            enable_role_aware_weighting=getattr(self.args.actor, "enable_role_aware_weighting", False),
+            role_amplify=getattr(self.args.actor, "role_amplify", 1.0),
+            role_attenuate=getattr(self.args.actor, "role_attenuate", 1.0),
         )
 
         # Mixtral 8x7b
@@ -309,6 +315,7 @@ class ActorPPOTrainer(ABC):
             advantages,
             action_mask=experience.action_mask,
             rollout_log_probs=experience.rollout_log_probs,
+            sequences=experience.sequences,
             **loss_batch_info,
         )
         experience.info["ppo_clip_ratio"] = clip_ratio.detach()
