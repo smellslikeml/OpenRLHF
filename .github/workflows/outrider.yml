@@ -7,7 +7,7 @@ name: Outrider
 
 on:
   schedule:
-    - cron: '0 14 * * 1'   # Mondays 14:00 UTC; pick any cadence
+    # - cron: '0 14 * * 1'   # Mondays 14:00 UTC; pick any cadence  # disabled 2026-07-10 in favor of outrider-daily.yml (branch-mode GLM)
   workflow_dispatch:
     inputs:
       provider:
