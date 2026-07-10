@@ -6,7 +6,7 @@ name: Outrider
 #   https://github.com/remyxai/outrider
 
 on:
-    workflow_dispatch:
+  workflow_dispatch:
     inputs:
       provider:
         description: 'Which model provider to route Claude Code at. anthropic = default api.anthropic.com; zai = z.ai (GLM family).'
