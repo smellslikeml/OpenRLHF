@@ -5,6 +5,7 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .token_surprisal_filter import rsi_select_mask
 from .utils import masked_mean
 
 
@@ -128,6 +129,8 @@ class PolicyLoss(nn.Module):
         enable_vllm_is_correction: bool = False,
         vllm_is_truncated_threshold: list = None,
         vllm_is_correction_type: str = "tis",
+        enable_rsi_filter: bool = False,
+        rsi_interval: list = None,
     ) -> None:
         super().__init__()
         self.clip_eps_low = clip_eps_low
@@ -138,6 +141,8 @@ class PolicyLoss(nn.Module):
         self.enable_vllm_is_correction = enable_vllm_is_correction
         self.vllm_is_truncated_threshold = vllm_is_truncated_threshold
         self.vllm_is_correction_type = vllm_is_correction_type
+        self.enable_rsi_filter = enable_rsi_filter
+        self.rsi_interval = rsi_interval
 
         # GSPO requires sequence-level loss (per-sample mean)
         if policy_loss_type == "gspo":
@@ -146,6 +151,17 @@ class PolicyLoss(nn.Module):
         # Dual-clip PPO: https://arxiv.org/pdf/1912.09729
         if dual_clip is not None:
             assert dual_clip > 1.0, f"dual_clip must be > 1.0, got {dual_clip}"
+
+        if self.enable_rsi_filter:
+            # RSI Selection (RSI-S), arXiv:2606.31575: keep tokens whose Relative
+            # Surprisal Index lies in a stable [low, high] interval. Same
+            # interval-mask shape as ICEPOP, but the signal is the policy's own
+            # entropy/surprisal rather than a rollout importance ratio.
+            if rsi_interval is None or len(rsi_interval) != 2:
+                raise ValueError("rsi_interval must be a [low, high] pair when enable_rsi_filter is True")
+            low, high = rsi_interval
+            if not (0.0 <= low < high):
+                raise ValueError(f"rsi_interval must satisfy 0 <= low < high, got {rsi_interval}")
 
         if self.vllm_is_correction_type not in {"tis", "icepop", "seq-mask-tis"}:
             raise ValueError(
@@ -159,6 +175,7 @@ class PolicyLoss(nn.Module):
         advantages: torch.Tensor,
         action_mask: Optional[torch.Tensor] = None,
         rollout_log_probs: Optional[torch.Tensor] = None,
+        entropy: Optional[torch.Tensor] = None,
         dp_size: int = 1,
         batch_num_tokens: Optional[float] = None,
         global_batch_size: Optional[float] = None,
@@ -217,6 +234,14 @@ class PolicyLoss(nn.Module):
                 vllm_is = torch.exp(rollout_log_ratio).clamp(min=low_threshold, max=high_threshold).detach()
                 loss = vllm_is * loss
             vllm_kl = masked_mean(rollout_log_probs - old_log_probs, action_mask, dim=None)
+
+        if self.enable_rsi_filter:
+            # RSI-S per-token filter: zero the loss of redundant low-surprisal
+            # tokens and unstable high-surprisal tail tokens before reduction.
+            if entropy is None:
+                raise ValueError("entropy must be provided to PolicyLoss when enable_rsi_filter is True")
+            rsi_mask = rsi_select_mask(entropy, log_probs, *self.rsi_interval)[0]
+            loss = loss * rsi_mask.to(loss.dtype)
 
         loss = aggregate_loss(
             loss,

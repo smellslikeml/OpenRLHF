@@ -269,6 +269,16 @@ if __name__ == "__main__":
         choices=["tis", "icepop", "seq-mask-tis"],
         help="vLLM IS correction type: tis (token-level clamp), icepop (token-level filter), seq-mask-tis (sequence-level geom mean)",
     )
+    # Relative Surprisal Index Selection (RSI-S): arXiv:2606.31575
+    parser.add_argument("--algo.advantage.rsi_filter_enable", action="store_true", default=False)
+    parser.add_argument(
+        "--algo.advantage.rsi_filter_interval",
+        type=float,
+        nargs=2,
+        default=[0.5, 2.0],
+        help="RSI-S [low, high] interval; tokens whose Relative Surprisal Index (-log p_sel)/H "
+        "falls outside are dropped from the policy loss (redundant low-surprisal, unstable tail)",
+    )
 
     # Async training using ray
     parser.add_argument("--train.async_enable", action="store_true", default=False, help="Enable async training")

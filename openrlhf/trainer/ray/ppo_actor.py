@@ -85,6 +85,10 @@ class ActorPPOTrainer(ABC):
                 else None
             ),
             vllm_is_correction_type=self.args.algo.advantage.is_correction_type,
+            enable_rsi_filter=self.args.algo.advantage.rsi_filter_enable,
+            rsi_interval=(
+                self.args.algo.advantage.rsi_filter_interval if self.args.algo.advantage.rsi_filter_enable else None
+            ),
         )
 
         # Mixtral 8x7b
@@ -298,7 +302,7 @@ class ActorPPOTrainer(ABC):
             return_output=True,
             ring_attn_group=self.strategy.ring_attn_group,
             packed_seq_lens=packed_seq_lens,
-            return_entropy=self.args.actor.entropy_coef is not None,
+            return_entropy=self.args.actor.entropy_coef is not None or self.actor_loss_fn.enable_rsi_filter,
             **mm_inputs,
         )
 
@@ -309,6 +313,9 @@ class ActorPPOTrainer(ABC):
             advantages,
             action_mask=experience.action_mask,
             rollout_log_probs=experience.rollout_log_probs,
+            entropy=(
+                output.entropy[:, -experience.action_mask.shape[1] :] if self.actor_loss_fn.enable_rsi_filter else None
+            ),
             **loss_batch_info,
         )
         experience.info["ppo_clip_ratio"] = clip_ratio.detach()
